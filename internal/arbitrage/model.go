@@ -38,13 +38,12 @@ type Node struct {
 	Vertexes []*Vertex
 }
 
-func (n *Node) AddVertexes(vertexes []*Vertex, wg *sync.WaitGroup) {
+func (n *Node) AddVertexes(vertexes []*Vertex) {
 	for i := range vertexes {
 		if vertexes[i].NodeA == n {
 			n.Vertexes = append(n.Vertexes, vertexes[i])
 		}
 	}
-	wg.Done()
 }
 
 func (n *Node) ExistIn(values []string) bool {
@@ -84,7 +83,11 @@ func (g *Graph) AddVertexes() {
 	var wg sync.WaitGroup
 	for i := range g.Nodes {
 		wg.Add(1)
-		go g.Nodes[i].AddVertexes(g.Vertexes, &wg)
+		index := i
+		go func() {
+			defer wg.Done()
+			g.Nodes[index].AddVertexes(g.Vertexes)
+		}()
 	}
 	wg.Wait()
 }
