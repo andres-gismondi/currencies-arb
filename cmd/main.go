@@ -3,16 +3,22 @@ package main
 import (
 	"context"
 	"currencies-arb/internal/arbitrage"
-	"currencies-arb/internal/repository/http"
+	"currencies-arb/internal/repository/memory"
+	"fmt"
+	"sync"
 )
 
 func main() {
-	repo := http.NewClient()
-	//repo := memory.Mem{}
+	//repo := http.NewClient()
+	repo := memory.Mem{}
 	arb := arbitrage.Arbitrage{
-		HTTPGetter: repo,
+		CurrencyProvider: repo,
+		Graph:            &arbitrage.Graph{},
+		Mutex:            &sync.Mutex{},
 	}
 
 	ctx := context.Background()
-	arb.Execute(ctx)
+	response := arb.Execute(ctx)
+
+	fmt.Println(response)
 }

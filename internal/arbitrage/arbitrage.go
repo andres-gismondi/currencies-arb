@@ -2,96 +2,89 @@ package arbitrage
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 )
 
 type Arbitrage struct {
-	HTTPGetter interface {
+	Mutex            *sync.Mutex
+	Graph            *Graph
+	CurrencyProvider interface {
 		Get(ctx context.Context) (map[string]string, error)
 	}
 }
 
-func (arb Arbitrage) Execute(ctx context.Context) {
-	currencies, err := arb.HTTPGetter.Get(ctx)
+var response = map[string][]string{}
+
+func (arb Arbitrage) Execute(ctx context.Context) map[string][]string {
+	currencies, err := arb.CurrencyProvider.Get(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	graph := arb.createNodesAndVertexes(currencies)
-	graph.AddVertexes()
-	graph.ToString()
+	arb.createNodesAndVertexes(currencies)
+	arb.Graph.AddVertexes()
+
+	// print to test
+	arb.Graph.ToString()
 
 	var wg sync.WaitGroup
-	response := sync.Map{}
 
-	for _, node := range graph.Nodes {
+	for i := range arb.Graph.Nodes {
 		wg.Add(1)
 
-		ways := []string{node.Name}
-		node := node
+		node := arb.Graph.Nodes[i]
+		ways := []string{arb.Graph.Nodes[i].Name}
+		value := 1.0
 		go func() {
 			defer wg.Done()
-
-			arb.do(node, ways, &response)
+			arb.do(node, ways, value)
 		}()
 	}
 	wg.Wait()
+
+	return response
 }
 
-func (arb Arbitrage) do(node *Node, ways []string, response *sync.Map) {
-	var wg sync.WaitGroup
-	write := true
+func (arb Arbitrage) createNodesAndVertexes(currencies map[string]string) {
+	for c, v := range currencies {
+		cA, cB := getCurrencies(c)
+		nA, nB := arb.parseCurrency(cA, cB)
+		arb.Graph.AddVertex(nA, nB, v)
+	}
+}
 
-	wg.Add(len(node.Vertexes))
-	for _, v := range node.Vertexes {
-		if !contains(ways, v.NodeB.Name) {
-			write = false
-			nodeV := v.NodeB
+func (arb Arbitrage) do(node *Node, ways []string, value float64) {
+	var wg sync.WaitGroup
+
+	// Iterate over pointers
+	for i := range node.Vertexes {
+		if !node.Vertexes[i].NextNode(node).ExistIn(ways) {
+			wg.Add(1)
+
+			nextNode := node.Vertexes[i].NextNode(node)
+			nextWays := append(ways, nextNode.Name)
+			nextValue := value * node.Vertexes[i].Value
 			go func() {
 				defer wg.Done()
-
-				ways = append(ways, nodeV.Name)
-				arb.do(nodeV, ways, response)
+				arb.do(nextNode, nextWays, nextValue)
 			}()
 		} else {
-			wg.Done()
-
-			if write {
-				currencies := strings.Join(ways, "-")
-				response.Store(currencies, "1")
-				fmt.Println(currencies)
+			waysPrint := append(ways, node.Vertexes[i].NextNode(node).Name)
+			if value > 1 {
+				arb.Mutex.Lock()
+				response[strings.Join(waysPrint, "-")] = waysPrint
+				arb.Mutex.Unlock()
 			}
 		}
 	}
+
 	wg.Wait()
 }
 
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
-func (arb Arbitrage) createNodesAndVertexes(currencies map[string]string) *Graph {
-	var graph Graph
-
-	for currency, value := range currencies {
-		currA, currB := parseCurrency(currency)
-		nodeA, nodeB := parseCurrencyToNode(currA, currB, &graph)
-		graph.AddVertex(nodeA, nodeB, value)
-	}
-
-	return &graph
-}
-
-func parseCurrencyToNode(curA, curB string, graph *Graph) (*Node, *Node) {
+func (arb Arbitrage) parseCurrency(curA, curB string) (*Node, *Node) {
 	var existA, existB bool
-	for _, n := range graph.Nodes {
+	for _, n := range arb.Graph.Nodes {
 		if curA == n.Name {
 			existA = true
 		}
@@ -103,10 +96,10 @@ func parseCurrencyToNode(curA, curB string, graph *Graph) (*Node, *Node) {
 	exist := func(e bool, curr string) *Node {
 		if !e {
 			n := &Node{Name: curr}
-			graph.AddNode(n)
+			arb.Graph.AddNode(n)
 			return n
 		}
-		for _, nde := range graph.Nodes {
+		for _, nde := range arb.Graph.Nodes {
 			if curr == nde.Name {
 				return nde
 			}
@@ -119,7 +112,7 @@ func parseCurrencyToNode(curA, curB string, graph *Graph) (*Node, *Node) {
 	return nodeA, nodeB
 }
 
-func parseCurrency(currency string) (string, string) {
+func getCurrencies(currency string) (string, string) {
 	currencies := strings.Split(currency, "-")
 	return currencies[0], currencies[1]
 }

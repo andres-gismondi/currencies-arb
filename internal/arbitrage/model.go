@@ -26,18 +26,34 @@ func (v *Vertex) AddNode(node *Node) {
 	}
 }
 
+func (v *Vertex) NextNode(node *Node) *Node {
+	if v.NodeA.Name == node.Name {
+		return v.NodeB
+	}
+	return v.NodeA
+}
+
 type Node struct {
 	Name     string
 	Vertexes []*Vertex
 }
 
 func (n *Node) AddVertexes(vertexes []*Vertex, wg *sync.WaitGroup) {
-	for _, vertex := range vertexes {
-		if vertex.NodeA == n {
-			n.Vertexes = append(n.Vertexes, vertex)
+	for i := range vertexes {
+		if vertexes[i].NodeA == n {
+			n.Vertexes = append(n.Vertexes, vertexes[i])
 		}
 	}
 	wg.Done()
+}
+
+func (n *Node) ExistIn(values []string) bool {
+	for _, a := range values {
+		if a == n.Name {
+			return true
+		}
+	}
+	return false
 }
 
 type Graph struct {
@@ -46,16 +62,13 @@ type Graph struct {
 }
 
 func (g *Graph) AddNode(node *Node) {
-	var exist bool
 	for _, n := range g.Nodes {
-		if node == n {
-			exist = true
+		if node.Name == n.Name {
+			return
 		}
 	}
 
-	if !exist {
-		g.Nodes = append(g.Nodes, node)
-	}
+	g.Nodes = append(g.Nodes, node)
 }
 
 func (g *Graph) AddVertex(nodeA, nodeB *Node, value string) {
@@ -69,11 +82,24 @@ func (g *Graph) AddVertex(nodeA, nodeB *Node, value string) {
 
 func (g *Graph) AddVertexes() {
 	var wg sync.WaitGroup
-	for _, node := range g.Nodes {
+	for i := range g.Nodes {
 		wg.Add(1)
-		go node.AddVertexes(g.Vertexes, &wg)
+		go g.Nodes[i].AddVertexes(g.Vertexes, &wg)
 	}
 	wg.Wait()
+}
+
+func (g *Graph) ReturnedVertex(from, to string, val float64) *Vertex {
+	for i := range g.Vertexes {
+		if g.Vertexes[i].NodeA.Name == from || g.Vertexes[i].NodeB.Name == from {
+			if g.Vertexes[i].NodeB.Name == to || g.Vertexes[i].NodeB.Name == from {
+				if g.Vertexes[i].Value != val {
+					return g.Vertexes[i]
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (g *Graph) ToString() {
@@ -84,9 +110,4 @@ func (g *Graph) ToString() {
 		}
 		fmt.Println("}")
 	}
-}
-
-type Response struct {
-	Currencies map[string]string
-	mutex      sync.Mutex
 }
